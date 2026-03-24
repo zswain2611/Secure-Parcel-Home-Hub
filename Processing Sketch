@@ -1,0 +1,105 @@
+/*
+ * Zachary Swain
+ *
+ * Project: Secure-Parcel Home Hub Dashboard
+ * Purpose: PC-based monitoring interface and data logger for the Arduino security hub.
+ * Function: Captures Serial data, updates the visual UI, and saves a timestamped log file.
+ */
+
+import processing.serial.*;
+
+Serial myPort;
+PrintWriter output; // Object used to write data to the log file
+String statusText = "SYSTEM SECURED";
+String lastActivity = "Initializing...";
+color statusColor = color(150, 0, 0); 
+
+void setup() {
+  size(800, 500);
+  background(20); 
+  
+  // Initialize the File Writer (creates system_log.txt in the sketch folder)
+  output = createWriter("system_log.txt");
+  output.println("--- SESSION LOG START: " + hour() + ":" + minute() + " ---");
+  output.flush();
+
+  // Print all available COM ports to the console for debugging
+  println(Serial.list());
+  
+  try {
+    // Attempt to connect to the Arduino (Index [2] based on system port list)
+    String portName = Serial.list()[2]; 
+    myPort = new Serial(this, portName, 9600);
+    myPort.bufferUntil('\n'); // Wait for a newline character before triggering serialEvent
+    println("SUCCESS: Connected to " + portName);
+  } 
+  catch (Exception e) {
+    statusText = "SERIAL ERROR";
+    lastActivity = "Check COM port / Close Serial Monitor";
+    println("CONNECTION ERROR: " + e.getMessage());
+  }
+}
+
+void draw() {
+  background(20); // Refresh frame
+  
+  textAlign(CENTER);
+  fill(255);
+  textSize(32);
+  text("SECURE-PARCEL HOME HUB", width/2, 80);
+  
+  // Dynamic Status Box
+  fill(statusColor);
+  rect(150, 140, 500, 200, 20);
+  
+  // Display Current System State
+  fill(255);
+  textSize(48);
+  text(statusText, width/2, 260);
+  
+  // Display Most Recent Activity (Cleaned of 'LOG:' prefix)
+  fill(180);
+  textSize(18);
+  text("LIVE LOG: " + lastActivity, width/2, 430);
+}
+
+// Handler for incoming Serial data from Arduino
+void serialEvent(Serial myPort) {
+  try {
+    String inString = myPort.readStringUntil('\n');
+    if (inString != null) {
+      inString = trim(inString); // Clean whitespace and newline characters
+      
+      // 1. DATA LOGGING: Save the raw message with a PC-based timestamp
+      output.println("[" + hour() + ":" + minute() + ":" + second() + "] " + inString);
+      output.flush(); // Force write to ensure data safety
+
+      // 2. UI CLEANING: Remove the 'LOG:' prefix for a cleaner visual dashboard
+      String cleanText = inString.replace("LOG: ", ""); 
+      lastActivity = cleanText;
+
+      // 3. UI STATE ENGINE: Update colors and text based on Arduino keywords
+      if (inString.contains("GRANTED")) {
+        statusText = "OPEN / UNLOCKED";
+        statusColor = color(0, 180, 0); // Success State: Green
+      } 
+      else if (inString.contains("SECURED") || inString.contains("STARTUP")) {
+        statusText = "SYSTEM SECURED";
+        statusColor = color(150, 0, 0); // Secure State: Red
+      }
+      else if (inString.contains("DENIED")) {
+        statusText = "ACCESS DENIED";
+        statusColor = color(255, 140, 0); // Unauthorized State: Orange
+      }
+    }
+  } catch (Exception e) {
+    println("Error reading serial: " + e.getMessage());
+  }
+}
+
+// Safe exit procedure: flushes and closes the file writer before quitting
+void keyPressed() {
+  output.flush();
+  output.close();
+  exit();
+}
